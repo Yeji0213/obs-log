@@ -298,7 +298,9 @@ ul{margin:0; padding:0; list-style:none}
       NASA/JPL-Caltech/UCLA "Our Neighbor Andromeda" (WISE, PIA12832) 크롭.
       원본 6666×6666 중 (2101,2519) 4400×2750 — 은하 원반이 제목 뒤를 지나가는 자리.
    ───────────────────────────────────────────────────────────── */
-.sky{position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none; isolation:isolate}
+/* 고정 배경은 자기 합성 층에 둔다 — 본문이 스크롤될 때 배경을 다시 칠하지 않고 이미 그린 층을 재사용한다 */
+.sky{position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none; isolation:isolate;
+  transform:translateZ(0); contain:strict}
 .sky > *{position:absolute; inset:0}
 
 /* 1층 — 바닥. 사진이 실패해도 이 층이 항상 남는다(이미지 폴백). oklab 보간이라 회색을 통과하지 않는다 */
@@ -361,9 +363,24 @@ ul{margin:0; padding:0; list-style:none}
 <rect width='220' height='220' filter='url(%23n)'/></svg>");
   background-size:220px 220px;
 }
-/* 표제 블록이 접히면 성운 밴드와 감광 시작점도 같이 올라간다 —
-   안 그러면 접힌 뒤 밝은 띠가 본문 뒤에 남는다 */
-html[data-cond="1"]{--vt:0px; --mask-end:34%}
+/* 스크롤해 표제가 화면 밖으로 나가면, 본문 뒤에 남는 밝은 성운 띠를 한 층 더 눌러 준다.
+   2026-09-13 스크롤 버벅임 수정: 예전에는 여기서 --vt·--mask-end 를 바꿨는데, 그러면 화면 전체 크기의
+   사진 마스크·감광 그라데이션을 통째로 다시 칠해야 했다(스크롤 도중 긴 프레임). 지금은 미리 칠해 둔
+   감광 층의 opacity 만 바꾼다 — 합성만 다시 하면 되는 속성이다. 기울기는 옛 --vt:0 결과에 맞춰 역산했다. */
+.sky-dim{
+  opacity:0; transition:opacity var(--t) var(--ease); will-change:opacity;
+  background:linear-gradient(180deg,
+    oklch(.078 .006 276 / 0) 0px,
+    oklch(.078 .006 276 / .58) 90px,
+    oklch(.078 .006 276 / .77) 190px,
+    oklch(.078 .006 276 / .40) 300px,
+    oklch(.078 .006 276 / .25) 460px,
+    oklch(.078 .006 276 / 0) 600px);
+  -webkit-mask-image:linear-gradient(90deg, #000 0%, #000 74%, rgba(0,0,0,.58) 88%, rgba(0,0,0,.32) 100%);
+          mask-image:linear-gradient(90deg, #000 0%, #000 74%, rgba(0,0,0,.58) 88%, rgba(0,0,0,.32) 100%);
+}
+.sky-glow{transition:opacity var(--t) var(--ease); will-change:opacity}
+html[data-cond="1"] .sky-dim{opacity:1}
 html[data-cond="1"] .sky-glow{opacity:.35}
 /* BUG-21: 대화상자가 열린 동안 뒤 페이지가 휠로 스크롤되지 않게. 스크롤바 자리는 유지해 폭이 흔들리지 않는다 */
 html{scrollbar-gutter:stable}
@@ -396,9 +413,9 @@ html[data-overlay]{overflow:hidden}
   background:linear-gradient(180deg, oklch(.98 .01 284 / .04), transparent 60%), var(--glass-bar);
   -webkit-backdrop-filter:var(--blur-bar); backdrop-filter:var(--blur-bar);
   border-bottom:1px solid var(--line-1); box-shadow:var(--hi);
-  transition:backdrop-filter var(--t) var(--ease);
 }
-html[data-cond="1"] .bar{--blur-bar:blur(34px) saturate(200%)}
+/* 흐림 반경을 스크롤 상태에 따라 26→34px 로 애니메이션하던 규칙은 뺐다. backdrop-filter 반경 전환은
+   매 프레임 뒤 화면을 새로 흐리는 가장 비싼 전환이다 (스크롤 버벅임의 원인 중 하나). */
 .bar-in{height:100%; display:flex; align-items:center; gap:var(--s-4)}
 .brand{display:flex; align-items:center; gap:var(--s-3); min-width:0}
 .brand .ico{color:rgba(226,232,255,.72); margin-left:-1px}
@@ -532,9 +549,12 @@ html[data-cond="1"] .brand .bar-title{opacity:1}
 /* 고정 바 높이만큼 비운다(바가 흐름에서 빠졌다) */
 .page{padding-block:var(--bar-h) var(--s-10)}
 
-/* ── 표제 블록 — 제목 + 관측 기록지다운 메타. 스크롤하면 접힌다(높이·opacity 만) ── */
-.masthead{height:var(--title-h); padding-top:30px; overflow:hidden;
-  transition:height var(--t) var(--ease), opacity .16s var(--ease)}
+/* ── 표제 블록 — 제목 + 관측 기록지다운 메타 ──
+   2026-09-13: 스크롤하면 높이를 0 으로 접던 동작을 없앴다. 접히는 순간 아래 본문이 128px(모바일은 더)
+   통째로 끌려 올라가고, 위로 스크롤해 다시 펼쳐지면 한 번에 밀려 내려가서 "위로 스크롤할 때 튀고 버벅이는"
+   버그가 났다(브라우저 스크롤 앵커링과 맞물려 스크롤 위치도 같이 튄다). 이제 표제는 본문과 함께 자연스럽게
+   스크롤되어 나가고, 상단 바의 작은 제목만 나타난다 — 레이아웃은 스크롤과 무관하게 고정이다. */
+.masthead{height:var(--title-h); padding-top:30px; overflow:hidden}
 .mh-row{display:flex; align-items:flex-end; gap:40px}
 .masthead h1{
   font-family:var(--font-serif); font-weight:400; font-size:var(--fs-display);
@@ -562,7 +582,6 @@ html[data-serif="0"] .masthead h1{font-family:var(--font-sans); font-weight:600;
     radial-gradient(ellipse 520px 56px  at 20% 100%, oklch(.78 .105 278 / .10), transparent 74%),
     radial-gradient(ellipse 1100px 140px at 30% 100%, oklch(.62 .120 266 / .036), transparent 78%);
 }
-html[data-cond="1"] .masthead{height:0; padding-top:0; opacity:0}
 .storage-warn{margin-bottom:var(--s-5); padding:var(--s-3) var(--s-4); font-size:.8125rem; line-height:1.6;
   border:1px solid var(--line-2); border-radius:var(--r-2); background:var(--glass);
   -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur)}
@@ -929,6 +948,15 @@ html[data-modality="pointer"] .hl input:focus-visible{outline-color:transparent}
   }
 }
 
+/* ── 터치 기기 스크롤 성능 (2026-09-13) ──
+   본문과 함께 움직이는 유리(기록지·판독 버튼·저장 경고)는 스크롤 한 프레임마다 뒤 배경을 새로 흐려야 한다.
+   핸드폰 GPU 에서는 이것이 스크롤 버벅임으로 바로 드러난다. 터치 기기에서만 흐림을 끄고 불투명도를 올린다.
+   상단 바는 44px 띠 하나라 흐림을 유지한다. 데스크톱(마우스)은 그대로다. */
+@media (hover:none) and (pointer:coarse){
+  :root{ --glass:oklch(.15 .012 278 / .90) }
+  .instrument,.btn-analysis,.storage-warn{-webkit-backdrop-filter:none; backdrop-filter:none}
+}
+
 /* ── 잠금 게이트: 해제 전에는 배경(.sky)과 잠금 화면만 존재한다 ── */
 html:not([data-unlocked]) body > :not(.sky):not(#gate){display:none !important}
 .gate-sheet{max-width:22rem}
@@ -945,6 +973,7 @@ html:not([data-unlocked]) body > :not(.sky):not(#gate){display:none !important}
   <div class="sky-base"></div>
   <div class="sky-photo"></div>
   <div class="sky-veil"></div>
+  <div class="sky-dim"></div>
   <div class="sky-glow"></div>
   <div class="sky-grain"></div>
 </div>
@@ -2527,13 +2556,16 @@ function startApp() {
      v2 에서 절차적 별(canvas 1400점)·반짝임(DOM 44개)·성운 호흡 2층을 들어냈다.
      배경이 실사 사진 한 장 + 그라데이션이 되면서 그 층들은 노이즈만 더했고,
      전폭 레이아웃에서는 "콘텐츠 컬럼 바깥 여백" 이라는 좌표 자체가 사라졌다.
-     남은 배경 JS 는 이것뿐이다: 스크롤 40px 이상이면 표제 블록이 접힌다.
-     transform 으로 미끄러뜨리지 않는다 — 높이와 opacity 만 바뀐다.
+     남은 배경 JS 는 이것뿐이다: 표제가 화면 밖으로 나가면 data-cond="1" 을 붙인다.
+     2026-09-13: data-cond 는 이제 레이아웃을 바꾸지 않는다(opacity 만). 그래서 스크롤 위치에 되먹임이 없다.
+     경계 한 점에서 켜졌다 꺼졌다 깜빡이지 않도록 켜는 선(64px)과 끄는 선(16px)을 다르게 둔다.
      스크롤 핸들러는 읽기만 하고, 쓰기는 rAF 안에서 상태가 바뀔 때만 한 번. */
   var condRAF = 0, condOn = null;
+  var COND_ON_PX = 64, COND_OFF_PX = 16;
   function syncCondense() {
     condRAF = 0;
-    var on = (window.pageYOffset || document.documentElement.scrollTop || 0) > 40;
+    var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+    var on = condOn ? y > COND_OFF_PX : y > COND_ON_PX;
     if (on === condOn) return;
     condOn = on;
     root.setAttribute("data-cond", on ? "1" : "0");
